@@ -1,155 +1,180 @@
 <template>
   <div>
-    <!-- Distance display card -->
-    <div v-if="totalDistance > 0" class="distance-card">
+    <!-- Transparent card to display total distance -->
+    <div v-if="totalDistance.kilometers > 0" class="distance-card">
       <p>Total Distance:</p>
-      <p>{{ totalDistance }} km</p>
+      <p>{{ totalDistance.kilometers }} km</p>
+      <p>{{ totalDistance.miles }} miles</p>
     </div>
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
-import mapboxgl from "mapbox-gl";
+<script setup>
+import { ref, shallowRef, watch, onMounted, onBeforeUnmount } from "vue";
 import * as turf from "@turf/turf";
 
-let props = defineProps({
+const props = defineProps({
   map: Object,
-}) as any;
-
-// GeoJSON object to hold the points and lines
-const geojson = shallowRef({
-  type: "FeatureCollection",
-  features: [],
 });
 
-// Used to draw the lines between points
-const linestring = shallowRef({
-  type: "Feature",
-  geometry: {
-    type: "LineString",
-    coordinates: [],
-  },
-});
+// Distance calculation using Turf.js
+const calculateDistance = (coords) => {
+  let totalDistance = 0;
 
-const totalDistance = ref(0); // Stores the total distance
-const coordinates = ref([]);
+  for (let i = 1; i < coords.length; i++) {
+    const from = turf.point(coords[i - 1]);
+    const to = turf.point(coords[i]);
 
-onMounted(() => {
-  if (props.map) {
-    props.map.on("load", () => {
-      // Add source for the GeoJSON data
-      props.map.addSource("geojson", {
-        type: "geojson",
-        data: geojson.value,
-      });
-
-      // Add a circle layer to display the points
-      props.map.addLayer({
-        id: "measure-points",
-        type: "circle",
-        source: "geojson",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": "#000",
-        },
-        filter: ["in", "$type", "Point"],
-      });
-
-      // Add a line layer to display the lines between points
-      props.map.addLayer({
-        id: "measure-lines",
-        type: "line",
-        source: "geojson",
-        layout: {
-          "line-cap": "round",
-          "line-join": "round",
-        },
-        paint: {
-          "line-color": "#000",
-          "line-width": 2.5,
-        },
-        filter: ["in", "$type", "LineString"],
-      });
+    // Calculate distance between points using Turf.js in kilometers
+    const distanceBetweenPoints = turf.distance(from, to, {
+      units: "kilometers",
     });
+    totalDistance += distanceBetweenPoints;
+  }
 
-    // Handle click event on the map
-    const handleMapClick = (e: any) => {
-      // Query the clicked point to see if a feature exists
-      const features = props.map.queryRenderedFeatures(e.point, {
-        layers: ["measure-points"],
-      });
+  const distanceInKilometers = totalDistance;
+  const distanceInMiles = totalDistance * 0.621371;
 
-      // Clear the distance container
-      totalDistance.value = 0;
+  return {
+    kilometers: distanceInKilometers.toFixed(2),
+    miles: distanceInMiles.toFixed(2),
+  };
+};
 
-      // Remove linestring to redraw it
-      if (geojson.value.features.length > 1) geojson.value.features.pop();
+const coordinates = shallowRef([]); // Store clicked points (lng, lat)
+const totalDistance = ref({ kilometers: 0, miles: 0 }); // Total distance in km and miles
+const geoJsonSource = shallowRef(null); // Store the GeoJSON source for points and lines
 
-      // If the clicked feature is a point, remove it
-      if (features.length) {
-        const id = features[0].properties.id;
-        geojson.value.features = geojson.value.features.filter(
-          (point: any) => point.properties.id !== id
-        );
-      } else {
-        // Otherwise, add the new point to the map
-        const point = {
+// Function to update GeoJSON data for points and line
+const updateGeoJsonSource = () => {
+  if (geoJsonSource.value) {
+    geoJsonSource.value.setData({
+      type: "FeatureCollection",
+      features: [
+        // Points features
+        ...coordinates.value.map((coord) => ({
           type: "Feature",
           geometry: {
             type: "Point",
-            coordinates: [e.lngLat.lng, e.lngLat.lat],
+            coordinates: coord,
           },
-          properties: {
-            id: String(new Date().getTime()), // Unique ID for each point
+        })),
+        // Line feature connecting the points
+        {
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: coordinates.value,
           },
-        };
-
-        geojson.value.features.push(point);
-      }
-
-      // If more than one point exists, calculate the distance
-      if (geojson.value.features.length > 1) {
-        linestring.value.geometry.coordinates = geojson.value.features.map(
-          (point) => point.geometry.coordinates
-        );
-
-        geojson.value.features.push(linestring.value);
-
-        // Use Turf.js to calculate the total distance in kilometers
-        const distance = turf.length(linestring.value, { units: "kilometers" });
-        totalDistance.value = distance.toLocaleString(); // Store the total distance
-      }
-
-      // Update the source data to re-render
-      props.map.getSource("geojson").setData(geojson.value);
-    };
-
-    // Add event listener for map clicks
-    props.map.on("click", handleMapClick);
-
-    // Handle mouse movement to change cursor style
-    const handleMouseMove = (e) => {
-      const features = props.map.queryRenderedFeatures(e.point, {
-        layers: ["measure-points"],
-      });
-      // Change the cursor to a pointer when hovering over points
-      props.map.getCanvas().style.cursor = features.length
-        ? "pointer"
-        : "crosshair";
-    };
-
-    props.map.on("mousemove", handleMouseMove);
-
-    // Cleanup when the component is unmounted
-    onBeforeUnmount(() => {
-      if (props.map) {
-        props.map.off("click", handleMapClick);
-        props.map.off("mousemove", handleMouseMove);
-      }
+        },
+      ],
     });
   }
+};
+
+// Add event listener for map clicks when measuring is enabled
+onMounted(() => {
+  const handleMapClick = (event) => {
+    const lngLat = event.lngLat; // Get the latitude and longitude of the clicked point
+
+    // Store the coordinates
+    coordinates.value.push([lngLat.lng, lngLat.lat]);
+
+    // Update the GeoJSON source with the new points and line
+    updateGeoJsonSource();
+
+    // Calculate the total distance whenever a new point is added
+    if (coordinates.value.length > 1) {
+      totalDistance.value = calculateDistance(coordinates.value);
+    }
+  };
+
+  // Add the map click event listener if the map exists
+  if (props.map) {
+    // Add a GeoJSON source to hold the clicked points and line
+    props.map.addSource("points-and-line", {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: [],
+      },
+    });
+
+    // Store the GeoJSON source for future updates
+    geoJsonSource.value = props.map.getSource("points-and-line");
+
+    // Add a circle layer to display the points
+    props.map.addLayer({
+      id: "circle-points",
+      type: "circle",
+      source: "points-and-line",
+      paint: {
+        "circle-radius": 6,
+        "circle-color": "#000000",
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#ffffff",
+      },
+    });
+
+    // Add a line layer to display the lines between points
+    props.map.addLayer({
+      id: "line-between-points",
+      type: "line",
+      source: "points-and-line",
+      paint: {
+        "line-color": "#808080",
+        "line-width": 3,
+      },
+    });
+
+    // Add the map click event listener
+    props.map.on("click", handleMapClick);
+  }
+
+  // Cleanup: Remove map event listeners, layers, and sources when the component is unmounted
+  onBeforeUnmount(() => {
+    if (props.map) {
+      props.map.off("click", handleMapClick);
+
+      // Remove the circle and line layers and source
+      if (props.map.getLayer("circle-points")) {
+        props.map.removeLayer("circle-points");
+      }
+      if (props.map.getLayer("line-between-points")) {
+        props.map.removeLayer("line-between-points");
+      }
+      if (props.map.getSource("points-and-line")) {
+        props.map.removeSource("points-and-line");
+      }
+    }
+
+    coordinates.value = [];
+    totalDistance.value = { kilometers: 0, miles: 0 };
+  });
+
+  props.map.on("mousemove", (e) => {
+    const features = props.map.queryRenderedFeatures(e.point, {
+      layers: ["line-between-points", "circle-points"],
+    });
+    // Change the cursor to a pointer when hovering over a point on the map.
+    // Otherwise cursor is a crosshair.
+    props.map.getCanvas().style.cursor = features.length
+      ? "pointer"
+      : "crosshair";
+  });
 });
+
+watch(
+  () => props.map,
+  (newMap) => {
+    if (!newMap) return;
+
+    // Reset coordinates and GeoJSON source when the component is re-rendered
+    coordinates.value = [];
+    totalDistance.value = { kilometers: 0, miles: 0 };
+    updateGeoJsonSource();
+  }
+);
 </script>
 
 <style scoped>

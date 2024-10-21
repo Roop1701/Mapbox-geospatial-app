@@ -1,19 +1,32 @@
 <template>
-  <div>
+  <div class="parent">
     <div id="map">
       <div class="controls">
-        <!-- <button @click="toggleDrawMode">Toggle Draw Mode</button> -->
-        <button @click="savePolygons">Save Polygons</button>
-        <button @click="clearPolygons">Clear Polygons</button>
+        <button @click="savePolygons" v-if="showSavePolygon">
+          Save Polygons
+        </button>
+
+        <button @click="clearPolygons" v-if="showSavePolygon">
+          Clear All Polygons
+        </button>
       </div>
 
       <!-- Button to toggle the distance measurement -->
-      <button @click="toggleDistanceMeasurement" class="toggle-button">
+      <button
+        @click="toggleDistanceMeasurement"
+        class="distance-measure-button"
+        v-if="!isDrawingMode"
+      >
         <svg v-if="!isMeasuring" :width="24" :height="24" viewBox="0 0 24 24">
           <path :d="mdiRuler" />
         </svg>
         <svg v-if="isMeasuring" :width="24" :height="24" viewBox="0 0 24 24">
           <path :d="mdiClose" />
+        </svg>
+      </button>
+      <button @click="toggleDrawMode" class="draw-button" v-if="!isDrawingMode">
+        <svg :width="24" :height="24" viewBox="0 0 24 24">
+          <path :d="mdiPencil" />
         </svg>
       </button>
       <!-- Include the DistanceMeasurement component only if measuring is active -->
@@ -23,6 +36,7 @@
         @resetLayers="resetLayers"
       />
     </div>
+    <SideBarComponent :map="mapContainer" />
   </div>
 </template>
 
@@ -31,16 +45,20 @@ import mapboxgl from "mapbox-gl";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
-import { mdiRuler, mdiClose } from "@mdi/js";
+import { mdiRuler, mdiClose, mdiPencil } from "@mdi/js";
 import appConfig from "~/src/config/app.config";
+import { featureCollectionStore } from "~/src/store/Geojson-Store";
 
 import { mapStore } from "~/src/store/Map-Store";
 import DistanceMeasureComponent from "./DistanceMeasureComponent.vue";
 
+const geojsonStore = featureCollectionStore();
+const mapInstance = mapStore();
 const mapContainer = shallowRef(null);
 let draw = shallowRef(null);
 let isDrawingMode = shallowRef(false);
 let isMeasuring = shallowRef(false);
+let showSavePolygon = shallowRef(false);
 
 let mapLoaded = shallowRef(false);
 
@@ -53,15 +71,13 @@ onMounted(() => {
     minZoom: 9, // starting zoom
     maxZoom: 18,
     navigationControl: true,
-    hash: true,
   });
   mapContainer.value.addControl(
     new mapboxgl.NavigationControl(),
     "bottom-left"
   );
 
-  console.log("MapContainer", mapContainer.value);
-  mapStore().updateMap(mapContainer.value);
+  mapInstance.updateMap(mapContainer.value);
 
   mapContainer.value.on("load", () => {
     console.log("Map loaded");
@@ -179,25 +195,26 @@ onMounted(() => {
     ],
   });
 
-  mapContainer.value.addControl(draw.value, "top-right");
+  mapContainer.value.on("draw.create", (e) => {
+    if (e.features.length > 0) {
+      showSavePolygon.value = true; // Show the Save Polygon button
+    }
+  });
+
+  // Hide the Save button if polygons are deleted
+  mapContainer.value.on("draw.delete", () => {
+    showSavePolygon.value = false; // Hide the Save Polygon button
+  });
 });
 
-// const toggleDrawMode = () => {
-//   // Enable or disable draw mode for polygons
-//   isDrawingMode.value = !isDrawingMode.value;
-//   if (isDrawingMode.value) {
-//     draw.value.changeMode("draw_polygon"); // Set to polygon drawing mode
-//   } else {
-//     draw.value.changeMode("simple_select"); // Disable drawing mode
-//   }
-// };
+const toggleDrawMode = () => {
+  // Enable or disable draw mode for polygons
+  isDrawingMode.value = !isDrawingMode.value;
+};
 
 const savePolygons = () => {
-  const appStore = useAppStore();
   const polygons = draw.value.getAll(); // Get all drawn polygons
   console.log("Polygons:", polygons);
-  // Add the polygons to Pinia store (you can also save them to the backend)
-  appStore.updateMapData(polygons);
 };
 
 const clearPolygons = () => {
@@ -226,15 +243,45 @@ watch(
   () => mapStore().mapLoaded,
   (newvalue) => {
     // mapLoaded.value = newvalue;
+    mapInstance.updateMap(mapContainer.value);
     console.log(mapLoaded.value);
+  }
+);
+
+// watch(
+//   () => isMeasuring.value,
+//   (newvalue) => {
+//     if (newvalue) {
+//       mapContainer.value.removeControl(draw.value);
+//     } else {
+//       mapContainer.value.addControl(draw.value, "top-right");
+//     }
+//   }
+// );
+
+watch(
+  () => isDrawingMode.value,
+  () => {
+    if (isDrawingMode.value) {
+      mapContainer.value.addControl(draw.value, "top-right");
+    } else {
+      mapContainer.value.removeControl(draw.value);
+    }
   }
 );
 </script>
 
-<style>
+<style scoped>
+.parent {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  height: 100vh;
+  width: 100vw;
+}
+
 #map {
-  width: 75vw;
-  height: 99vh;
+  width: 100%;
+  height: 100%;
 }
 .controls {
   margin-top: 10px;
@@ -251,12 +298,25 @@ button {
   z-index: 1;
 }
 button:hover {
-  background-color: #0056b3;
+  background-color: #ebeef2;
 }
-.toggle-button {
+.distance-measure-button {
   position: absolute;
-  top: 11vh;
-  left: 71vw;
+  bottom: 20vh;
+  left: 5px;
+  background-color: white;
+  border: none;
+  cursor: pointer;
+  padding: 5px 5px 5px 10px;
+  border-radius: 25%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+}
+
+.draw-button {
+  position: absolute;
+  bottom: 28vh;
+  left: 5px;
   background-color: white;
   border: none;
   cursor: pointer;

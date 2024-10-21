@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 
 export const mapStore = defineStore("MapStore", () => {
-  let map = shallowRef(null);
+  let map = ref(null);
   let mapLoaded = shallowRef(false);
 
   const updateMap = (mapcopy) => {

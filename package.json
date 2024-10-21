@@ -17,6 +17,7 @@
     "mapbox-gl": "^3.7.0",
     "nuxt": "^3.13.0",
     "pinia": "^2.1.7",
+    "ulid": "^2.3.0",
     "vite-plugin-vuetify": "^2.0.4",
     "vue": "^3.4.15",
     "vue-router": "latest"
