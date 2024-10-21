@@ -10,11 +10,20 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.4.3",
+    "@mdi/js": "^7.4.47",
+    "@pinia/nuxt": "^0.5.5",
+    "@turf/turf": "^7.1.0",
     "mapbox-gl": "^3.7.0",
     "nuxt": "^3.13.0",
+    "pinia": "^2.1.7",
     "vite-plugin-vuetify": "^2.0.4",
-    "vue": "latest",
-    "vue-router": "latest",
-    "vuetify": "^3.7.2"
+    "vue": "^3.4.15",
+    "vue-router": "latest"
+  },
+  "devDependencies": {
+    "@pinia-plugin-persistedstate/nuxt": "^1.2.1",
+    "@types/mapbox__mapbox-gl-draw": "^1.4.8",
+    "vuetify": "^3.7.3"
   }
 }
