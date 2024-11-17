@@ -1,3 +1,6 @@
+# Live Link to Access the App
+https://geospatial-map-ops.netlify.app/login
+
 # Nuxt 3 Minimal Starter
 
 Look at the [Nuxt 3 documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
